@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:medium.com)",
+      "WebFetch(domain:vzurczak.wordpress.com)",
+      "WebFetch(domain:central.sonatype.org)",
+      "Bash(gh api:*)",
+      "Bash(mvn clean:*)"
+    ]
+  }
+}
