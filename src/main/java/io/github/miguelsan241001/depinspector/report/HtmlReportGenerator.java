@@ -1,6 +1,8 @@
 package io.github.miguelsan241001.depinspector.report;
 
 import io.github.miguelsan241001.depinspector.model.*;
+
+import java.util.List;
 import org.apache.maven.plugin.logging.Log;
 
 import java.io.*;
@@ -60,6 +62,10 @@ public class HtmlReportGenerator {
             sb.append(buildManualSection(noVersion));
         }
 
+        if (report.getScopeIssues() != null && !report.getScopeIssues().isEmpty()) {
+            sb.append(buildScopeIssuesSection(report.getScopeIssues()));
+        }
+
         sb.append(buildFooter());
         sb.append("</body>\n</html>");
 
@@ -83,6 +89,25 @@ public class HtmlReportGenerator {
                ".card-vuln .count { color: #dc3545; }\n" +
                ".card-clean .count { color: #28a745; }\n" +
                ".card-skip .count { color: #6c757d; }\n" +
+               ".card-scope .count { color: #e67e22; }\n" +
+               ".scope-card { background: white; border-radius: 8px; margin-bottom: 15px; " +
+               "              box-shadow: 0 2px 8px rgba(0,0,0,0.08); overflow: hidden; " +
+               "              border-left: 5px solid #e67e22; }\n" +
+               ".scope-header { padding: 12px 20px; background: #fef9f0; }\n" +
+               ".scope-tag { display: inline-block; padding: 2px 8px; border-radius: 4px; " +
+               "             font-size: 0.75em; font-weight: bold; }\n" +
+               ".scope-wrong { background: #fde8d8; color: #c0392b; }\n" +
+               ".scope-right { background: #d5f5e3; color: #1e8449; }\n" +
+               ".fix-menu { padding: 12px 20px; }\n" +
+               ".fix-item { padding: 8px 0; border-bottom: 1px solid #f5f5f5; }\n" +
+               ".fix-item:last-child { border-bottom: none; }\n" +
+               ".fix-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; " +
+               "             font-size: 0.72em; font-weight: bold; margin-right: 8px; " +
+               "             background: #1a1a2e; color: white; }\n" +
+               ".fix-badge-warn { background: #e67e22; }\n" +
+               ".code-block { font-family: monospace; background: #f8f9fa; border-radius: 4px; " +
+               "              padding: 8px 12px; font-size: 0.8em; margin-top: 6px; " +
+               "              white-space: pre; overflow-x: auto; }\n" +
                "section { margin-bottom: 30px; }\n" +
                "section h2 { font-size: 1.3em; margin-bottom: 15px; padding-bottom: 8px; " +
                "             border-bottom: 2px solid #e0e0e0; }\n" +
@@ -155,6 +180,10 @@ public class HtmlReportGenerator {
                "  <div class=\"summary-card card-skip\">\n" +
                "    <div class=\"count\">" + report.countSkipped() + "</div>\n" +
                "    <div class=\"label\">Skipped</div>\n" +
+               "  </div>\n" +
+               "  <div class=\"summary-card card-scope\">\n" +
+               "    <div class=\"count\">" + (report.getScopeIssues() != null ? report.getScopeIssues().size() : 0) + "</div>\n" +
+               "    <div class=\"label\">Scope Issues</div>\n" +
                "  </div>\n" +
                "  <div class=\"summary-card\">\n" +
                "    <div class=\"count\">" + (report.getResults() != null ? report.getResults().size() : 0) + "</div>\n" +
@@ -277,6 +306,91 @@ public class HtmlReportGenerator {
         }
 
         sb.append("</section>\n");
+        return sb.toString();
+    }
+
+    private String buildScopeIssuesSection(List<ScopeIssue> issues) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("<section>\n");
+        sb.append("<h2>&#9888; Scope Issues — Test Libraries Reachable in Production Classpath</h2>\n");
+        sb.append("<p style=\"color:#666;font-size:0.9em;margin-bottom:15px;\">");
+        sb.append("These libraries are test-only frameworks that appear in <code>compile</code> or <code>runtime</code> scope. ");
+        sb.append("They will be included in your final JAR/WAR unnecessarily, increasing attack surface.</p>\n");
+
+        for (ScopeIssue issue : issues) {
+            DependencyInfo dep = issue.getOffendingDep();
+            sb.append("<div class=\"scope-card\">\n");
+
+            // Header
+            sb.append("  <div class=\"scope-header\">\n");
+            sb.append("    <span style=\"font-family:monospace;font-weight:bold;\">")
+              .append(esc(dep.getCoordinates())).append("</span>\n");
+            sb.append("    &nbsp;");
+            sb.append("    <span class=\"scope-tag scope-wrong\">").append(esc(issue.getEffectiveScope())).append("</span>\n");
+            sb.append("    <span style=\"color:#aaa;font-size:0.9em;\"> &rarr; should be </span>\n");
+            sb.append("    <span class=\"scope-tag scope-right\">").append(esc(issue.getRecommendedScope())).append("</span>\n");
+            if (dep.getTransitiveOrigin() != null) {
+                sb.append("    <div style=\"font-size:0.8em;color:#888;margin-top:4px;\">Brought in by: <code>")
+                  .append(esc(dep.getTransitiveOrigin())).append("</code></div>\n");
+            }
+            sb.append("  </div>\n");
+
+            // Fix menu
+            sb.append("  <div class=\"fix-menu\">\n");
+            if (issue.getFixes() != null) {
+                for (ScopeIssue.Fix fix : issue.getFixes()) {
+                    sb.append(buildFixItem(fix, issue));
+                }
+            }
+            sb.append("  </div>\n");
+            sb.append("</div>\n");
+        }
+
+        sb.append("</section>\n");
+        return sb.toString();
+    }
+
+    private String buildFixItem(ScopeIssue.Fix fix, ScopeIssue issue) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("    <div class=\"fix-item\">\n");
+
+        switch (fix) {
+            case UPGRADE_PARENT:
+                sb.append("      <span class=\"fix-badge\">OPTION 1</span> ");
+                sb.append("Upgrade parent <code>").append(esc(issue.getParentGav())).append("</code>");
+                sb.append(" to <strong>").append(esc(issue.getParentUpgradeVersion())).append("</strong> ");
+                sb.append("— it may have corrected the scope. Verify with <code>mvn dependency:tree</code> after upgrading.\n");
+                break;
+
+            case EXCLUDE_AND_ADD:
+                sb.append("      <span class=\"fix-badge\">OPTION 2</span> ");
+                sb.append("Exclude from parent and re-declare with correct scope:\n");
+                if (issue.getExclusionSnippet() != null) {
+                    sb.append("      <pre class=\"code-block\">").append(esc(issue.getExclusionSnippet())).append("</pre>\n");
+                }
+                if (issue.getAddDirectlySnippet() != null) {
+                    sb.append("      <div style=\"font-size:0.82em;color:#666;margin-top:6px;\">Then add directly:</div>\n");
+                    sb.append("      <pre class=\"code-block\">").append(esc(issue.getAddDirectlySnippet())).append("</pre>\n");
+                }
+                break;
+
+            case ADD_WITH_CORRECT_SCOPE:
+                sb.append("      <span class=\"fix-badge\">FIX</span> ");
+                sb.append("Change scope to <code>test</code> in your pom.xml:\n");
+                if (issue.getAddDirectlySnippet() != null) {
+                    sb.append("      <pre class=\"code-block\">").append(esc(issue.getAddDirectlySnippet())).append("</pre>\n");
+                }
+                break;
+
+            case MAX_VERSION_REACHED:
+                sb.append("      <span class=\"fix-badge fix-badge-warn\">NOTE</span> ");
+                sb.append(issue.getWhyCannotUpgrade() != null
+                    ? esc(issue.getWhyCannotUpgrade())
+                    : "No newer version of the parent available that fixes this scope issue.").append("\n");
+                break;
+        }
+
+        sb.append("    </div>\n");
         return sb.toString();
     }
 

@@ -97,20 +97,29 @@ public class AnalyzeMojo extends AbstractMojo {
             results.add(result);
         }
 
-        // 6. Build report
+        // 6. Detect scope issues (test libs in compile scope)
+        ScopeAnalyzer scopeAnalyzer = new ScopeAnalyzer(versionResolver, getLog());
+        List<ScopeIssue> scopeIssues = scopeAnalyzer.analyze(dependencies);
+        if (!scopeIssues.isEmpty()) {
+            getLog().warn(scopeIssues.size() + " scope issue(s) detected: test libraries reachable at compile/runtime scope.");
+        }
+
+        // 7. Build report
         AnalysisReport report = new AnalysisReport(
                 project.getArtifactId(), project.getVersion(), results);
+        report.setScopeIssues(scopeIssues);
 
-        // 7. Generate HTML report
+        // 8. Generate HTML report
         File reportFile = reportGenerator.generate(report, outputDirectory);
 
-        // 8. Log summary
+        // 9. Log summary
         getLog().info("============================================");
         getLog().info("Dependency Inspector Analysis Complete");
-        getLog().info("  Vulnerable: " + report.countVulnerable());
-        getLog().info("  Clean:      " + report.countClean());
-        getLog().info("  Skipped:    " + report.countSkipped());
-        getLog().info("  Report:     " + reportFile.getAbsolutePath());
+        getLog().info("  Vulnerable:    " + report.countVulnerable());
+        getLog().info("  Scope issues:  " + scopeIssues.size());
+        getLog().info("  Clean:         " + report.countClean());
+        getLog().info("  Skipped:       " + report.countSkipped());
+        getLog().info("  Report:        " + reportFile.getAbsolutePath());
         getLog().info("============================================");
 
         return report;

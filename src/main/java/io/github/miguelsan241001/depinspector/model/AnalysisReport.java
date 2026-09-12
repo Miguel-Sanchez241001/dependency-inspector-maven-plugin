@@ -1,6 +1,7 @@
 package io.github.miguelsan241001.depinspector.model;
 
 import java.time.LocalDateTime;
+import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -10,6 +11,7 @@ public class AnalysisReport {
     private String projectVersion;
     private LocalDateTime generatedAt;
     private List<AnalysisResult> results;
+    private List<ScopeIssue> scopeIssues = Collections.emptyList();
 
     public AnalysisReport() {
         this.generatedAt = LocalDateTime.now();
@@ -55,4 +57,9 @@ public class AnalysisReport {
 
     public List<AnalysisResult> getResults() { return results; }
     public void setResults(List<AnalysisResult> results) { this.results = results; }
+
+    public List<ScopeIssue> getScopeIssues() { return scopeIssues; }
+    public void setScopeIssues(List<ScopeIssue> scopeIssues) {
+        this.scopeIssues = scopeIssues != null ? scopeIssues : Collections.emptyList();
+    }
 }
