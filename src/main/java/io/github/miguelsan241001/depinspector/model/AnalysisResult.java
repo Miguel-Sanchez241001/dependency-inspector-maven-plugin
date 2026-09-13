@@ -1,5 +1,6 @@
 package io.github.miguelsan241001.depinspector.model;
 
+import java.util.Collections;
 import java.util.List;
 
 public class AnalysisResult {
@@ -9,6 +10,7 @@ public class AnalysisResult {
     private UpgradeRecommendation recommendation;
     private boolean analysisSkipped;
     private String skipReason;
+    private List<UsageLocation> usages = Collections.emptyList();
 
     public AnalysisResult() {}
 
@@ -34,4 +36,9 @@ public class AnalysisResult {
 
     public String getSkipReason() { return skipReason; }
     public void setSkipReason(String skipReason) { this.skipReason = skipReason; }
+
+    public List<UsageLocation> getUsages() { return usages; }
+    public void setUsages(List<UsageLocation> usages) {
+        this.usages = usages != null ? usages : Collections.emptyList();
+    }
 }

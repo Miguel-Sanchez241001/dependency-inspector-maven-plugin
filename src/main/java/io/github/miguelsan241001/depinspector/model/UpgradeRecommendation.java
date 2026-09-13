@@ -1,5 +1,7 @@
 package io.github.miguelsan241001.depinspector.model;
 
+import io.github.miguelsan241001.depinspector.model.CompatibilityStatus;
+
 public class UpgradeRecommendation {
 
     public enum Strategy {
@@ -17,7 +19,7 @@ public class UpgradeRecommendation {
     private String targetVersion;
     private String alternativeSuggestion;
     private String exclusionSnippet;
-    private boolean hasBreakingChanges;
+    private CompatibilityStatus compatibilityStatus = CompatibilityStatus.NOT_CHECKED;
     private String upgradeCommand; // ready to copy-paste
 
     public UpgradeRecommendation() {}
@@ -46,8 +48,13 @@ public class UpgradeRecommendation {
     public String getExclusionSnippet() { return exclusionSnippet; }
     public void setExclusionSnippet(String exclusionSnippet) { this.exclusionSnippet = exclusionSnippet; }
 
-    public boolean isHasBreakingChanges() { return hasBreakingChanges; }
-    public void setHasBreakingChanges(boolean hasBreakingChanges) { this.hasBreakingChanges = hasBreakingChanges; }
+    public CompatibilityStatus getCompatibilityStatus() { return compatibilityStatus; }
+    public void setCompatibilityStatus(CompatibilityStatus compatibilityStatus) {
+        this.compatibilityStatus = compatibilityStatus != null ? compatibilityStatus : CompatibilityStatus.NOT_CHECKED;
+    }
+
+    /** Convenience method — true only when BREAKING is confirmed. */
+    public boolean isHasBreakingChanges() { return compatibilityStatus == CompatibilityStatus.BREAKING; }
 
     public String getUpgradeCommand() { return upgradeCommand; }
     public void setUpgradeCommand(String upgradeCommand) { this.upgradeCommand = upgradeCommand; }

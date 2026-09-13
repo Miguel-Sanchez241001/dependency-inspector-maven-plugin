@@ -1,8 +1,10 @@
 package io.github.miguelsan241001.depinspector.service;
 
+import io.github.miguelsan241001.depinspector.model.CompatibilityStatus;
 import japicmp.cmp.JApiCmpArchive;
 import japicmp.cmp.JarArchiveComparator;
 import japicmp.cmp.JarArchiveComparatorOptions;
+
 import japicmp.model.JApiClass;
 import org.apache.maven.plugin.logging.Log;
 import org.eclipse.aether.RepositorySystem;
@@ -33,33 +35,48 @@ public class CompatibilityChecker {
         this.log = log;
     }
 
-    public boolean hasBreakingChanges(String groupId, String artifactId, String oldVersion, String targetVersion) {
+    /**
+     * Checks binary compatibility between {@code oldVersion} and {@code targetVersion}.
+     *
+     * @return {@link CompatibilityStatus#COMPATIBLE} if no breaking changes found,
+     *         {@link CompatibilityStatus#BREAKING} if breaking changes detected,
+     *         {@link CompatibilityStatus#INCONCLUSIVE} if JARs could not be resolved
+     *         or the comparison failed for any reason.
+     */
+    public CompatibilityStatus checkCompatibility(String groupId, String artifactId,
+                                                   String oldVersion, String targetVersion) {
         File oldJar = resolveArtifact(groupId, artifactId, oldVersion);
         File newJar = resolveArtifact(groupId, artifactId, targetVersion);
-        String newVersion = targetVersion;
 
         if (oldJar == null || newJar == null) {
             log.warn("Could not resolve JARs for compatibility check: " +
-                    groupId + ":" + artifactId + " " + oldVersion + " -> " + newVersion +
-                    ". Assuming no breaking changes (conservative).");
-            return false;
+                    groupId + ":" + artifactId + " " + oldVersion + " -> " + targetVersion +
+                    ". Marking as INCONCLUSIVE.");
+            return CompatibilityStatus.INCONCLUSIVE;
         }
 
         try {
             JarArchiveComparatorOptions options = new JarArchiveComparatorOptions();
             options.setAccessModifier(japicmp.model.AccessModifier.PUBLIC);
+
+            // Ignore missing optional classes — prevents NoClassDefFoundError for
+            // optional deps (OSGi, Servlet API, DOM4J, etc.)
+            options.getIgnoreMissingClasses().setIgnoreAllMissingClasses(true);
+
             JarArchiveComparator comparator = new JarArchiveComparator(options);
 
             List<JApiClass> changes = comparator.compare(
                     java.util.Collections.singletonList(new JApiCmpArchive(oldJar, oldVersion)),
-                    java.util.Collections.singletonList(new JApiCmpArchive(newJar, newVersion)));
+                    java.util.Collections.singletonList(new JApiCmpArchive(newJar, targetVersion)));
 
-            return changes.stream().anyMatch(c -> !c.isBinaryCompatible());
+            boolean breaking = changes.stream().anyMatch(c -> !c.isBinaryCompatible());
+            return breaking ? CompatibilityStatus.BREAKING : CompatibilityStatus.COMPATIBLE;
 
         } catch (Exception e) {
             log.warn("japicmp comparison failed for " + groupId + ":" + artifactId +
-                    " " + oldVersion + " -> " + newVersion + ": " + e.getMessage());
-            return false;
+                    " " + oldVersion + " -> " + targetVersion + ": " + e.getMessage() +
+                    ". Marking as INCONCLUSIVE.");
+            return CompatibilityStatus.INCONCLUSIVE;
         }
     }
 
