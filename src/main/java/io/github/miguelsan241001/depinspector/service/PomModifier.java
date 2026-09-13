@@ -1,5 +1,6 @@
 package io.github.miguelsan241001.depinspector.service;
 
+import io.github.miguelsan241001.depinspector.model.DependencyInfo;
 import io.github.miguelsan241001.depinspector.model.UpgradeRecommendation;
 import org.apache.maven.plugin.logging.Log;
 import org.w3c.dom.Document;
@@ -158,6 +159,94 @@ public class PomModifier {
             Node child = children.item(i);
             if (child instanceof Element && child.getNodeName().equals(tagName)) {
                 return (Element) child;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Adds an {@code <exclusion>} for {@code dep} inside the direct dependency identified by {@code parentGav}.
+     * If {@code parentGav} is null, searches all {@code <dependency>} elements for the dep itself and adds
+     * the exclusion to its closest ancestor dependency.
+     *
+     * @return true if the exclusion was inserted
+     */
+    public boolean applyExclusions(File pomFile, DependencyInfo dep, String parentGav) {
+        try {
+            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            DocumentBuilder builder = factory.newDocumentBuilder();
+
+            Document doc;
+            try (FileInputStream fis = new FileInputStream(pomFile)) {
+                doc = builder.parse(fis);
+            }
+
+            // Determine which dependency in the POM should receive the exclusion block
+            Element targetDep = null;
+
+            if (parentGav != null) {
+                String[] parts = parentGav.split(":");
+                if (parts.length >= 2) {
+                    targetDep = findDependencyElement(doc, parts[0], parts[1]);
+                }
+            }
+
+            if (targetDep == null) {
+                // Fall back: find the dependency itself
+                targetDep = findDependencyElement(doc, dep.getGroupId(), dep.getArtifactId());
+            }
+
+            if (targetDep == null) {
+                log.warn("Could not find dependency element in POM for exclusion: " + dep.getCoordinates());
+                return false;
+            }
+
+            // Get or create <exclusions> element inside targetDep
+            Element exclusionsEl = getChildElement(targetDep, "exclusions");
+            if (exclusionsEl == null) {
+                exclusionsEl = doc.createElement("exclusions");
+                targetDep.appendChild(exclusionsEl);
+            }
+
+            // Check if the exclusion already exists
+            NodeList existing = exclusionsEl.getElementsByTagName("exclusion");
+            for (int i = 0; i < existing.getLength(); i++) {
+                Element ex = (Element) existing.item(i);
+                if (dep.getGroupId().equals(getChildText(ex, "groupId")) &&
+                    dep.getArtifactId().equals(getChildText(ex, "artifactId"))) {
+                    log.info("Exclusion for " + dep.getCoordinates() + " already present — skipping");
+                    return false;
+                }
+            }
+
+            // Create <exclusion> element
+            Element exclusion = doc.createElement("exclusion");
+            Element gEl = doc.createElement("groupId");
+            gEl.setTextContent(dep.getGroupId());
+            Element aEl = doc.createElement("artifactId");
+            aEl.setTextContent(dep.getArtifactId());
+            exclusion.appendChild(gEl);
+            exclusion.appendChild(aEl);
+            exclusionsEl.appendChild(exclusion);
+
+            writeDocument(doc, pomFile);
+            log.info("Added exclusion for " + dep.getCoordinates() + " in POM");
+            return true;
+
+        } catch (Exception e) {
+            log.error("Failed to apply exclusion for " + dep.getCoordinates() + ": " + e.getMessage(), e);
+            return false;
+        }
+    }
+
+    private Element findDependencyElement(Document doc, String groupId, String artifactId) {
+        NodeList deps = doc.getElementsByTagName("dependency");
+        for (int i = 0; i < deps.getLength(); i++) {
+            Element dep = (Element) deps.item(i);
+            if (groupId.equals(getChildText(dep, "groupId")) &&
+                artifactId.equals(getChildText(dep, "artifactId"))) {
+                return dep;
             }
         }
         return null;
