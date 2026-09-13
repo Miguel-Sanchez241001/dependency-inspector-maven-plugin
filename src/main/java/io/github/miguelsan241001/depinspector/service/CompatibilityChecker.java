@@ -56,20 +56,8 @@ public class CompatibilityChecker {
         }
 
         try {
-            JarArchiveComparatorOptions options = new JarArchiveComparatorOptions();
-            options.setAccessModifier(japicmp.model.AccessModifier.PUBLIC);
-
-            // Ignore missing optional classes — prevents NoClassDefFoundError for
-            // optional deps (OSGi, Servlet API, DOM4J, etc.)
-            options.getIgnoreMissingClasses().setIgnoreAllMissingClasses(true);
-
-            JarArchiveComparator comparator = new JarArchiveComparator(options);
-
-            List<JApiClass> changes = comparator.compare(
-                    java.util.Collections.singletonList(new JApiCmpArchive(oldJar, oldVersion)),
-                    java.util.Collections.singletonList(new JApiCmpArchive(newJar, targetVersion)));
-
-            boolean breaking = changes.stream().anyMatch(c -> !c.isBinaryCompatible());
+            List<JApiClass> changes = doCompare(oldJar, oldVersion, newJar, targetVersion);
+            boolean breaking = changes != null && changes.stream().anyMatch(c -> !c.isBinaryCompatible());
             return breaking ? CompatibilityStatus.BREAKING : CompatibilityStatus.COMPATIBLE;
 
         } catch (Exception e) {
@@ -80,7 +68,25 @@ public class CompatibilityChecker {
         }
     }
 
-    private File resolveArtifact(String groupId, String artifactId, String version) {
+    /**
+     * Runs the japicmp binary comparison. Extracted as protected so tests can
+     * override it without touching Aether or the filesystem.
+     */
+    protected List<JApiClass> doCompare(File oldJar, String oldVersion,
+                                         File newJar, String newVersion) {
+        JarArchiveComparatorOptions options = new JarArchiveComparatorOptions();
+        options.setAccessModifier(japicmp.model.AccessModifier.PUBLIC);
+        // Ignore missing optional classes — prevents NoClassDefFoundError for
+        // optional deps (OSGi, Servlet API, DOM4J, etc.)
+        options.getIgnoreMissingClasses().setIgnoreAllMissingClasses(true);
+
+        JarArchiveComparator comparator = new JarArchiveComparator(options);
+        return comparator.compare(
+                java.util.Collections.singletonList(new JApiCmpArchive(oldJar, oldVersion)),
+                java.util.Collections.singletonList(new JApiCmpArchive(newJar, newVersion)));
+    }
+
+    protected File resolveArtifact(String groupId, String artifactId, String version) {
         try {
             ArtifactRequest request = new ArtifactRequest();
             request.setArtifact(new DefaultArtifact(groupId, artifactId, "jar", version));
