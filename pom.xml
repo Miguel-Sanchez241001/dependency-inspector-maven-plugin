@@ -6,11 +6,35 @@
 
     <groupId>io.github.Miguel-Sanchez241001</groupId>
     <artifactId>dependency-inspector-maven-plugin</artifactId>
-    <version>1.0-SNAPSHOT</version>
+    <version>1.0.0</version>
     <packaging>maven-plugin</packaging>
 
     <name>Dependency Inspector Maven Plugin</name>
     <description>Audits Maven project dependencies for CVEs via OSV.dev and suggests/applies safe upgrades</description>
+    <url>https://github.com/Miguel-Sanchez241001/dependency-inspector-maven-plugin</url>
+
+    <licenses>
+        <license>
+            <name>Apache License, Version 2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <developers>
+        <developer>
+            <id>Miguel-Sanchez241001</id>
+            <name>Miguel Sanchez</name>
+            <url>https://github.com/Miguel-Sanchez241001</url>
+        </developer>
+    </developers>
+
+    <scm>
+        <connection>scm:git:git://github.com/Miguel-Sanchez241001/dependency-inspector-maven-plugin.git</connection>
+        <developerConnection>scm:git:ssh://github.com/Miguel-Sanchez241001/dependency-inspector-maven-plugin.git</developerConnection>
+        <url>https://github.com/Miguel-Sanchez241001/dependency-inspector-maven-plugin/tree/main</url>
+        <tag>v1.0.0</tag>
+    </scm>
 
     <properties>
         <maven.compiler.source>11</maven.compiler.source>
@@ -156,4 +180,74 @@
             </plugin>
         </plugins>
     </build>
+
+    <!-- ================================================================
+         Perfil de release: se activa con -Prelease
+         Genera sources.jar, javadoc.jar, firma con GPG y publica en
+         Maven Central via el nuevo portal (central.sonatype.com).
+         ================================================================ -->
+    <profiles>
+        <profile>
+            <id>release</id>
+            <build>
+                <plugins>
+                    <!-- 1. Jar de código fuente (requerido por Central) -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-source-plugin</artifactId>
+                        <version>3.3.1</version>
+                        <executions>
+                            <execution>
+                                <id>attach-sources</id>
+                                <goals><goal>jar-no-fork</goal></goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <!-- 2. Jar de Javadoc (requerido por Central) -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <version>3.10.0</version>
+                        <configuration>
+                            <doclint>none</doclint>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>attach-javadocs</id>
+                                <goals><goal>jar</goal></goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <!-- 3. Firma GPG (requerido por Central) -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-gpg-plugin</artifactId>
+                        <version>3.2.7</version>
+                        <executions>
+                            <execution>
+                                <id>sign-artifacts</id>
+                                <phase>verify</phase>
+                                <goals><goal>sign</goal></goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <!-- 4. Publicar en Maven Central (nuevo portal) -->
+                    <plugin>
+                        <groupId>org.sonatype.central</groupId>
+                        <artifactId>central-publishing-maven-plugin</artifactId>
+                        <version>0.6.0</version>
+                        <extensions>true</extensions>
+                        <configuration>
+                            <publishingServerId>central</publishingServerId>
+                            <autoPublish>true</autoPublish>
+                            <waitUntil>published</waitUntil>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>
