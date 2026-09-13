@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>io.github.miguelsan241001.test</groupId>
+    <artifactId>test-consumer</artifactId>
+    <version>1.0-SNAPSHOT</version>
+    <packaging>jar</packaging>
+
+    <name>Dependency Inspector - Test Consumer</name>
+    <description>Test project with known vulnerable dependencies for manual verification</description>
+
+    <dependencies>
+        <!-- CVE-2021-44228 (Log4Shell) and others -->
+        <dependency>
+            <groupId>log4j</groupId>
+            <artifactId>log4j</artifactId>
+            <version>1.2.17</version>
+        </dependency>
+
+        <!-- CVE-2019-14540, CVE-2019-16335, etc. -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>2.9.10</version>
+        </dependency>
+
+        <!-- Commons-collections deserialization vulnerability -->
+        <dependency>
+            <groupId>commons-collections</groupId>
+            <artifactId>commons-collections</artifactId>
+            <version>3.2.1</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>io.github.Miguel-Sanchez241001</groupId>
+                <artifactId>dependency-inspector-maven-plugin</artifactId>
+                <version>1.0-SNAPSHOT</version>
+                <configuration>
+                    <outputDirectory>${project.build.directory}/dependency-inspector</outputDirectory>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
