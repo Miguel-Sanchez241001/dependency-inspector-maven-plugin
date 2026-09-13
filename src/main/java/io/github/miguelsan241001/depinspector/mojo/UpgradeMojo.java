@@ -1,6 +1,7 @@
 package io.github.miguelsan241001.depinspector.mojo;
 
 import io.github.miguelsan241001.depinspector.model.*;
+import io.github.miguelsan241001.depinspector.model.CompatibilityStatus;
 import io.github.miguelsan241001.depinspector.report.HtmlReportGenerator;
 import io.github.miguelsan241001.depinspector.service.*;
 import io.github.miguelsan241001.depinspector.util.HttpClientFactory;
@@ -48,6 +49,9 @@ public class UpgradeMojo extends AbstractMojo {
     @Parameter(property = "artifact")
     private String artifact; // optional: "groupId:artifactId"
 
+    @Parameter(property = "interactive", defaultValue = "false")
+    private boolean interactive;
+
     @Override
     public void execute() {
         try {
@@ -60,7 +64,8 @@ public class UpgradeMojo extends AbstractMojo {
     }
 
     void doExecute() throws Exception {
-        getLog().info("Starting dependency upgrade" + (dryRun ? " (DRY RUN)" : "") + "...");
+        getLog().info("Starting dependency upgrade" + (dryRun ? " (DRY RUN)" : "") +
+                      (interactive ? " (INTERACTIVE)" : "") + "...");
 
         OkHttpClient httpClient = HttpClientFactory.create(skipSslVerification);
         OsvClient osvClient = new OsvClient(httpClient, getLog());
@@ -86,76 +91,176 @@ public class UpgradeMojo extends AbstractMojo {
             if (!vulns.isEmpty()) {
                 UpgradeRecommendation rec = versionResolver.resolve(dep);
                 if (rec != null && rec.isAutomaticUpgrade() && rec.getTargetVersion() != null) {
-                    boolean breaking = compatChecker.hasBreakingChanges(
+                    CompatibilityStatus status = compatChecker.checkCompatibility(
                             dep.getGroupId(), dep.getArtifactId(),
                             dep.getVersion(), rec.getTargetVersion());
-                    rec.setHasBreakingChanges(breaking);
+                    rec.setCompatibilityStatus(status);
                 }
                 result.setRecommendation(rec);
             }
             results.add(result);
         }
 
-        // 2. Filter to automatic upgrades only
-        List<UpgradeRecommendation> upgrades = results.stream()
+        // 2. Scan usages
+        UsageScanner usageScanner = new UsageScanner(project.getBasedir(), getLog());
+        usageScanner.scan(results);
+
+        // 3. Filter vulnerable deps with some action available
+        List<AnalysisResult> vulnerable = results.stream()
                 .filter(AnalysisResult::isVulnerable)
-                .map(AnalysisResult::getRecommendation)
-                .filter(r -> r != null && r.isAutomaticUpgrade() && r.getTargetVersion() != null)
                 .collect(Collectors.toList());
 
-        // 3. Filter by artifact if specified
+        // 4. Filter by artifact if specified
         if (artifact != null && !artifact.isBlank()) {
             String[] parts = artifact.split(":");
             if (parts.length == 2) {
-                final String filterGroup = parts[0];
-                final String filterArtifact = parts[1];
-                upgrades = upgrades.stream()
-                        .filter(r -> filterGroup.equals(r.getDependency().getGroupId()) &&
-                                     filterArtifact.equals(r.getDependency().getArtifactId()))
+                final String fg = parts[0], fa = parts[1];
+                vulnerable = vulnerable.stream()
+                        .filter(r -> fg.equals(r.getDependency().getGroupId()) &&
+                                     fa.equals(r.getDependency().getArtifactId()))
                         .collect(Collectors.toList());
             } else {
-                getLog().warn("Invalid artifact filter format. Expected groupId:artifactId, got: " + artifact);
+                getLog().warn("Invalid artifact filter: expected groupId:artifactId, got: " + artifact);
             }
         }
 
-        if (upgrades.isEmpty()) {
-            getLog().info("No automatic upgrades available.");
+        if (vulnerable.isEmpty()) {
+            getLog().info("No vulnerable dependencies found — nothing to upgrade.");
             return;
         }
 
-        // 4. Dry run: print and exit
+        // 5. Determine which deps need interactive prompt
+        // Interactive mode: ask for ALL
+        // Non-interactive: ask only for HIGH_RISK (UPGRADE_MAJOR, ALTERNATIVE_LIB)
+        List<AnalysisResult> toAsk = new ArrayList<>();
+        List<AnalysisResult> autoUpgrade = new ArrayList<>();
+
+        for (AnalysisResult r : vulnerable) {
+            UpgradeRecommendation rec = r.getRecommendation();
+            boolean isHighRisk = rec != null && (
+                    rec.getStrategy() == UpgradeRecommendation.Strategy.UPGRADE_MAJOR ||
+                    rec.getStrategy() == UpgradeRecommendation.Strategy.ALTERNATIVE_LIB);
+
+            if (interactive || isHighRisk) {
+                toAsk.add(r);
+            } else if (rec != null && rec.isAutomaticUpgrade() && rec.getTargetVersion() != null) {
+                autoUpgrade.add(r);
+            }
+        }
+
+        // 6. Dry run: print proposed actions
         if (dryRun) {
-            getLog().info("Dry run - proposed upgrades:");
-            for (UpgradeRecommendation rec : upgrades) {
-                getLog().info("  " + rec.getDependency().getCoordinates() +
+            getLog().info("Dry run — proposed automatic upgrades:");
+            for (AnalysisResult r : autoUpgrade) {
+                UpgradeRecommendation rec = r.getRecommendation();
+                getLog().info("  " + r.getDependency().getCoordinates() +
                         " -> " + rec.getTargetVersion() +
-                        " [" + rec.getStrategy().name() + "]" +
-                        (rec.isHasBreakingChanges() ? " (WARNING: breaking changes)" : ""));
+                        " [" + rec.getStrategy() + "]" +
+                        " compat=" + rec.getCompatibilityStatus());
+            }
+            if (!toAsk.isEmpty()) {
+                getLog().info("Dry run — would prompt for " + toAsk.size() + " high-risk dep(s):");
+                for (AnalysisResult r : toAsk) {
+                    getLog().info("  " + r.getDependency().getCoordinates());
+                }
             }
             return;
         }
 
-        // 5. Apply upgrades
-        File pomFile = project.getFile();
-        pomModifier.backup(pomFile, outputDirectory);
+        // 7. Apply automatic upgrades (PATCH/MINOR, non-interactive)
+        int applied = 0;
+        int excluded = 0;
+        int skipped = 0;
 
-        int applied = pomModifier.apply(pomFile, upgrades);
+        if (!autoUpgrade.isEmpty()) {
+            File pomFile = project.getFile();
+            if (applied == 0) pomModifier.backup(pomFile, outputDirectory);
+            List<UpgradeRecommendation> recs = autoUpgrade.stream()
+                    .map(AnalysisResult::getRecommendation)
+                    .collect(Collectors.toList());
+            applied += pomModifier.apply(pomFile, recs);
+        }
 
-        long manual = results.stream()
-                .filter(AnalysisResult::isVulnerable)
-                .filter(r -> r.getRecommendation() != null && !r.getRecommendation().isAutomaticUpgrade())
-                .count();
+        // 8. Handle interactive / high-risk deps
+        if (!toAsk.isEmpty()) {
+            File pomFile = project.getFile();
+            boolean backedUp = applied > 0; // backup may already exist
 
-        // 6. Generate updated report
+            InteractiveConsole console = new InteractiveConsole(getLog());
+            try {
+                int idx = 1;
+                for (AnalysisResult r : toAsk) {
+                    DependencyInfo dep = r.getDependency();
+                    boolean canExclude = dep.getTransitiveOrigin() != null ||
+                            dep.getType() == DependencyInfo.DependencyType.TRANSITIVE;
+
+                    InteractiveDecision decision = console.ask(r, idx++, toAsk.size(), canExclude);
+
+                    switch (decision) {
+                        case UPGRADE:
+                            UpgradeRecommendation rec = r.getRecommendation();
+                            if (rec != null && rec.getTargetVersion() != null) {
+                                if (!backedUp) {
+                                    pomModifier.backup(pomFile, outputDirectory);
+                                    backedUp = true;
+                                }
+                                int cnt = pomModifier.apply(pomFile, List.of(rec));
+                                applied += cnt;
+                                if (cnt == 0) {
+                                    getLog().warn("Could not apply upgrade for " + dep.getCoordinates() +
+                                            " — may need manual update");
+                                }
+                            } else {
+                                getLog().warn("No target version available for " + dep.getCoordinates() +
+                                        " — skipping upgrade");
+                                skipped++;
+                            }
+                            break;
+
+                        case EXCLUDE:
+                            if (!backedUp) {
+                                pomModifier.backup(pomFile, outputDirectory);
+                                backedUp = true;
+                            }
+                            boolean ok = pomModifier.applyExclusions(pomFile, dep, dep.getTransitiveOrigin());
+                            if (ok) excluded++;
+                            else {
+                                getLog().warn("Could not apply exclusion for " + dep.getCoordinates());
+                                skipped++;
+                            }
+                            break;
+
+                        case SKIP:
+                        default:
+                            skipped++;
+                            getLog().info("Skipped: " + dep.getCoordinates());
+                            break;
+                    }
+                }
+            } finally {
+                console.close();
+            }
+        }
+
+        // 9. Generate updated report
         AnalysisReport report = new AnalysisReport(
                 project.getArtifactId(), project.getVersion(), results);
         reportGenerator.generate(report, outputDirectory);
 
+        long manual = vulnerable.stream()
+                .filter(r -> r.getRecommendation() != null && !r.getRecommendation().isAutomaticUpgrade())
+                .filter(r -> !toAsk.contains(r))
+                .count();
+
         getLog().info("============================================");
         getLog().info("Upgrade Summary");
-        getLog().info("  Applied:          " + applied);
-        getLog().info("  Require manual:   " + manual);
-        getLog().info("  POM backup at:    " + new File(outputDirectory, "pom.xml.bak").getAbsolutePath());
+        getLog().info("  Applied upgrades:   " + applied);
+        getLog().info("  Exclusions added:   " + excluded);
+        getLog().info("  Skipped:            " + skipped);
+        getLog().info("  Require manual:     " + manual);
+        if (applied > 0 || excluded > 0) {
+            getLog().info("  POM backup at:    " + new File(outputDirectory, "pom.xml.bak").getAbsolutePath());
+        }
         getLog().info("============================================");
     }
 }
