@@ -4,14 +4,14 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>io.github.Miguel-Sanchez241001</groupId>
+    <groupId>io.github.miguel-sanchez241001</groupId>
     <artifactId>dependency-inspector-maven-plugin</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.1-SNAPSHOT</version>
     <packaging>maven-plugin</packaging>
 
     <name>Dependency Inspector Maven Plugin</name>
     <description>Audits Maven project dependencies for CVEs via OSV.dev and suggests/applies safe upgrades</description>
-    <url>https://github.com/Miguel-Sanchez241001/dependency-inspector-maven-plugin</url>
+    <url>https://github.com/miguel-sanchez241001/dependency-inspector-maven-plugin</url>
 
     <licenses>
         <license>
@@ -23,17 +23,17 @@
 
     <developers>
         <developer>
-            <id>Miguel-Sanchez241001</id>
+            <id>miguel-sanchez241001</id>
             <name>Miguel Sanchez</name>
-            <url>https://github.com/Miguel-Sanchez241001</url>
+            <url>https://github.com/miguel-sanchez241001</url>
         </developer>
     </developers>
 
     <scm>
-        <connection>scm:git:git://github.com/Miguel-Sanchez241001/dependency-inspector-maven-plugin.git</connection>
-        <developerConnection>scm:git:ssh://github.com/Miguel-Sanchez241001/dependency-inspector-maven-plugin.git</developerConnection>
-        <url>https://github.com/Miguel-Sanchez241001/dependency-inspector-maven-plugin/tree/main</url>
-        <tag>v1.0.0</tag>
+        <connection>scm:git:git://github.com/miguel-sanchez241001/dependency-inspector-maven-plugin.git</connection>
+        <developerConnection>scm:git:ssh://github.com/miguel-sanchez241001/dependency-inspector-maven-plugin.git</developerConnection>
+        <url>https://github.com/miguel-sanchez241001/dependency-inspector-maven-plugin/tree/main</url>
+        <tag>HEAD</tag>
     </scm>
 
     <properties>
@@ -238,12 +238,11 @@
                     <plugin>
                         <groupId>org.sonatype.central</groupId>
                         <artifactId>central-publishing-maven-plugin</artifactId>
-                        <version>0.6.0</version>
+                        <version>0.11.0</version>
                         <extensions>true</extensions>
                         <configuration>
                             <publishingServerId>central</publishingServerId>
-                            <autoPublish>true</autoPublish>
-                            <waitUntil>published</waitUntil>
+                            <autoPublish>false</autoPublish>
                         </configuration>
                     </plugin>
                 </plugins>

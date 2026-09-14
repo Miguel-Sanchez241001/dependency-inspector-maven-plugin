@@ -1,0 +1,97 @@
+name: Deploy to Maven Central
+
+on:
+  repository_dispatch:
+    types: [plugin-merged]
+
+jobs:
+  deploy:
+    name: Release ${{ github.event.client_payload.version }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout plugin repo at triggered SHA
+        uses: actions/checkout@v4
+        with:
+          repository: Miguel-Sanchez241001/dependency-inspector-maven-plugin
+          ref: ${{ github.event.client_payload.sha }}
+          token: ${{ secrets.PLUGIN_REPO_PAT }}
+
+      - name: Set up JDK 11
+        uses: actions/setup-java@v4
+        with:
+          java-version: '11'
+          distribution: temurin
+          cache: maven
+
+      - name: Import GPG key
+        run: |
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
+          gpg --list-secret-keys --keyid-format LONG
+
+      - name: Configure GPG for Maven
+        run: |
+          echo "export GPG_TTY=$(tty)" >> ~/.bashrc
+          echo "use-agent" >> ~/.gnupg/gpg.conf
+          echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
+
+      - name: Write Maven settings.xml
+        run: |
+          mkdir -p ~/.m2
+          cat > ~/.m2/settings.xml << 'EOF'
+          <settings>
+            <servers>
+              <server>
+                <id>central</id>
+                <username>${{ secrets.SONATYPE_USERNAME }}</username>
+                <password>${{ secrets.SONATYPE_PASSWORD }}</password>
+              </server>
+            </servers>
+          </settings>
+          EOF
+
+      - name: Calculate release and next versions
+        id: versions
+        run: |
+          SNAPSHOT_VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+          RELEASE_VERSION=${SNAPSHOT_VERSION%-SNAPSHOT}
+          # Increment patch for next snapshot
+          BASE=${RELEASE_VERSION%.*}
+          PATCH=${RELEASE_VERSION##*.}
+          NEXT_PATCH=$((PATCH + 1))
+          NEXT_VERSION="${BASE}.${NEXT_PATCH}-SNAPSHOT"
+          echo "release_version=$RELEASE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "next_version=$NEXT_VERSION"       >> "$GITHUB_OUTPUT"
+          echo "Release: $RELEASE_VERSION  Next: $NEXT_VERSION"
+
+      - name: Set release version in pom.xml
+        run: |
+          mvn versions:set -DnewVersion=${{ steps.versions.outputs.release_version }} \
+            -DgenerateBackupPoms=false --no-transfer-progress -q
+
+      - name: Build and deploy to Maven Central
+        run: |
+          mvn clean deploy -Prelease -DskipTests --no-transfer-progress \
+            -Dgpg.passphrase=""
+
+      - name: Create GitHub Release tag
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.versions.outputs.release_version }}
+          name: Release v${{ steps.versions.outputs.release_version }}
+          generate_release_notes: true
+          repository: Miguel-Sanchez241001/dependency-inspector-maven-plugin
+          token: ${{ secrets.PLUGIN_REPO_PAT }}
+
+      - name: Set next snapshot version
+        run: |
+          mvn versions:set -DnewVersion=${{ steps.versions.outputs.next_version }} \
+            -DgenerateBackupPoms=false --no-transfer-progress -q
+
+      - name: Commit and push next snapshot to plugin repo
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add pom.xml
+          git commit -m "chore: bump to ${{ steps.versions.outputs.next_version }} [skip ci]"
+          git push https://x-access-token:${{ secrets.PLUGIN_REPO_PAT }}@github.com/Miguel-Sanchez241001/dependency-inspector-maven-plugin.git HEAD:main

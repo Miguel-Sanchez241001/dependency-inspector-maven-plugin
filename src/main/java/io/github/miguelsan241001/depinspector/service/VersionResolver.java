@@ -176,7 +176,7 @@ public class VersionResolver {
         return String.format(CENTRAL_METADATA_URL, groupPath, dep.getArtifactId());
     }
 
-    private List<String> fetchAvailableVersions(DependencyInfo dep) {
+    public List<String> fetchAvailableVersions(DependencyInfo dep) {
         String url = buildMetadataUrl(dep);
 
         try {
